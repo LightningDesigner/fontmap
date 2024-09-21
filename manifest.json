@@ -1,0 +1,8 @@
+{
+    "name": "Font Mapper",
+    "id": "your-plugin-id",
+    "api": "1.0.0",
+    "main": "src/code.js",
+    "ui": "src/ui.html",
+    "editorType": ["figma"]
+}

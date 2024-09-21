@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Font Style Mapper</title>
+  <link href="styles.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.14.0/Sortable.min.js"></script>
+</head>
+<body class="p-4">
+  <div id="app">
+    <h2>Font Mapping</h2>
+    <div class="checkbox-container">
+      <input type="checkbox" id="onlyFrames">
+      <label for="onlyFrames">Only Selected Frames</label>
+    </div>
+    <button id="addMapping">Add Mapping</button>
+    <div id="mappingList"></div>
+    <button id="applyMappings" style="display: none;">Apply Mappings</button>
+  </div>
+
+  <template id="mappingTemplate">
+    <div class="mapping-item" draggable="true">
+      <div class="drag-handle">☰</div>
+      <div class="mapping-content">
+        <div class="column">
+          <label for="fontSize">Font Size:</label>
+          <input type="number" class="fontSize" min="1" max="1000">
+          <label for="fontWeight">Font Weight:</label>
+          <select class="fontWeight">
+            <option value="100">Thin (100)</option>
+            <option value="200">Extra Light (200)</option>
+            <option value="300">Light (300)</option>
+            <option value="400">Regular (400)</option>
+            <option value="500">Medium (500)</option>
+            <option value="600">Semi Bold (600)</option>
+            <option value="700">Bold (700)</option>
+            <option value="800">Extra Bold (800)</option>
+            <option value="900">Black (900)</option>
+          </select>
+        </div>
+        <div class="column">
+          <label for="localStyle">Local Style:</label>
+          <select class="localStyle"></select>
+        </div>
+      </div>
+      <button class="deleteMapping">Delete</button>
+    </div>
+  </template>
+
+  <script>
+  let mappingCount = 0;
+  const MAX_MAPPINGS = 30;
+
+  document.getElementById('addMapping').addEventListener('click', () => {
+    if (mappingCount < MAX_MAPPINGS) {
+      addMappingItem();
+      mappingCount++;
+      document.getElementById('applyMappings').style.display = 'block';
+    } else {
+      alert(`Maximum of ${MAX_MAPPINGS} mappings reached`);
+    }
+  });
+
+  function addMappingItem() {
+    const template = document.getElementById('mappingTemplate');
+    const mappingList = document.getElementById('mappingList');
+    const newMapping = template.content.cloneNode(true);
+    mappingList.appendChild(newMapping);
+
+    const newMappingItem = mappingList.lastElementChild;
+    const localStyleSelect = newMappingItem.querySelector('.localStyle');
+    
+    localStyleSelect.addEventListener('focus', () => {
+      if (!localStyleSelect.options.length) {
+        parent.postMessage({ 
+          pluginMessage: { 
+            type: 'get-local-styles',
+            targetId: localStyleSelect.id
+          } 
+        }, '*');
+      }
+    });
+
+    // Assign a unique ID to the localStyle select
+    localStyleSelect.id = 'localStyle_' + Date.now();
+
+    newMappingItem.querySelector('.deleteMapping').addEventListener('click', (e) => {
+      e.target.closest('.mapping-item').remove();
+      mappingCount--;
+      if (mappingCount === 0) {
+        document.getElementById('applyMappings').style.display = 'none';
+      }
+    });
+
+    updateMappingListeners();
+    initSortable();
+  }
+
+  function initSortable() {
+    new Sortable(document.getElementById('mappingList'), {
+      animation: 150,
+      handle: '.drag-handle',
+      onEnd: function (evt) {
+        updateMappingOrder();
+      }
+    });
+  }
+
+  function updateMappingOrder() {
+    const mappings = [];
+    document.querySelectorAll('.mapping-item').forEach((item, index) => {
+      const fontSize = item.querySelector('.fontSize').value;
+      const fontWeight = item.querySelector('.fontWeight').value;
+      const localStyle = item.querySelector('.localStyle').value;
+      
+      if (fontSize && fontWeight && localStyle) {
+        mappings.push({ 
+          fontSize: parseFloat(fontSize), 
+          fontWeight: parseInt(fontWeight), 
+          localStyle,
+          order: index
+        });
+      }
+    });
+
+    parent.postMessage({
+      pluginMessage: {
+        type: 'update-mapping-order',
+        mappings: mappings
+      }
+    }, '*');
+  }
+
+  document.getElementById('applyMappings').addEventListener('click', () => {
+    const mappings = [];
+    document.querySelectorAll('.mapping-item').forEach(item => {
+        const fontSize = item.querySelector('.fontSize').value;
+        const fontWeight = item.querySelector('.fontWeight').value;
+        const localStyle = item.querySelector('.localStyle').value;
+        
+        if (fontSize && fontWeight && localStyle) {
+            mappings.push({ 
+                fontSize: parseFloat(fontSize), 
+                fontWeight: parseInt(fontWeight), 
+                localStyle 
+            });
+        }
+    });
+
+    const onlyFrames = document.getElementById('onlyFrames').checked;
+
+    if (mappings.length > 0) {
+        console.log('Sending mappings:', mappings);
+        parent.postMessage({
+            pluginMessage: {
+                type: 'apply-mappings',
+                mappings: mappings,
+                onlyFrames: onlyFrames
+            }
+        }, '*');
+    }
+  });
+
+  window.onmessage = (event) => {
+    if (event.data.pluginMessage.type === 'local-styles') {
+      const targetSelect = document.getElementById(event.data.pluginMessage.targetId);
+      if (targetSelect) {
+        targetSelect.innerHTML = ''; // Clear existing options
+        event.data.pluginMessage.styles.forEach(style => {
+          const option = document.createElement('option');
+          option.value = style.id;
+          option.textContent = style.name;
+          targetSelect.appendChild(option);
+        });
+      }
+    }
+  };
+
+  function updateMappingListeners() {
+    document.querySelectorAll('.mapping-item').forEach(item => {
+      item.addEventListener('change', () => {
+        const fontSize = item.querySelector('.fontSize').value;
+        const fontWeight = item.querySelector('.fontWeight').value;
+        const localStyle = item.querySelector('.localStyle').value;
+        
+        if (fontSize && fontWeight && localStyle) {
+          parent.postMessage({
+            pluginMessage: {
+              type: 'update-mapping',
+              mapping: { fontSize, fontWeight, localStyle }
+            }
+          }, '*');
+        }
+      });
+    });
+  }
+
+  // Call initSortable on page load
+  initSortable();
+  </script>
+
+  <style>
+  #mappingList {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .mapping-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid #ccc;
+    padding: 10px;
+    border-radius: 4px;
+    cursor: move;
+  }
+  .mapping-content {
+    display: flex;
+    justify-content: space-between;
+    width: calc(100% - 70px);
+  }
+  .column {
+    display: flex;
+    flex-direction: column;
+    width: 48%;
+  }
+  #applyMappings {
+    margin-top: 10px;
+    width: 100%;
+  }
+  .deleteMapping {
+    background-color: #ff4d4d;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .checkbox-container {
+    margin-bottom: 10px;
+  }
+  .drag-handle {
+    cursor: move;
+    padding-right: 10px;
+  }
+  </style>
+</body>
+</html>
